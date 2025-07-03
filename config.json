@@ -1,9 +1,9 @@
 [
   {
-    "movie_url": "https://www.district.in/movies/f1-the-movie-movie-tickets-in-chennai-MV175956?frmtid=d0cX21TWuR",
-    "showdate": "29",
-    "rows": "ABCDEFGHIJK",
-    "movie_name": "F1 Movie"
-  }
-
+  "movie_name": "F1 Movie",
+  "movie_url": "https://www.district.in/movies/f1-the-movie-movie-tickets-in-chennai-MV175956?frmtid=d0cX21TWuR",
+  "showdate": "3",
+  "rows": "ABCDEFGHIJK",
+  "seat_range": [9, 24]
+}
 ]
