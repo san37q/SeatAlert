@@ -36,39 +36,31 @@ def log_to_file(message, movie_name):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(f"log_{movie_name.replace(' ', '_')}.txt", "a", encoding="utf-8") as f:
         f.write(f"[{now}] {message}\n\n")
+
 async def click_imax_tab(page):
     try:
-        # Wait until the IMAX tab is present
         await page.wait_for_selector("#imaxd", timeout=10000)
         imax_tab = page.locator("#imaxd")
-
-        # Check if it's already active (skip if so)
         class_attr = await imax_tab.get_attribute("class")
         if class_attr and "MDPFilterPills_active__MoRCa" in class_attr:
-            return  # Already selected, no need to click
-
-        # Try clicking inner div with aria-label (safer)
+            return
         clickable = imax_tab.locator("div[aria-label*='IMAX']")
-
         for attempt in range(5):
             try:
                 if await clickable.is_visible():
                     await clickable.scroll_into_view_if_needed()
                     await clickable.click(force=True)
-                    print("✅ IMAX tab clicked.")
                     return
                 else:
                     print(f"⏳ IMAX clickable not visible (attempt {attempt + 1})")
             except Exception as e:
                 print(f"⚠️ Click failed (attempt {attempt + 1}): {e}")
             await asyncio.sleep(1)
-
         print("❌ Failed to click IMAX tab after retries.")
-
     except Exception as e:
         print(f"❌ IMAX tab selector error: {e}")
 
-async def check_available_shows(movie_url, showdate, seat_row, movie_name):
+async def check_available_shows(movie_url, showdate, seat_row, seat_range, movie_name):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
@@ -78,7 +70,7 @@ async def check_available_shows(movie_url, showdate, seat_row, movie_name):
 
         try:
             await page.goto(movie_url)
-            await page.locator("#imaxd").click()
+            await click_imax_tab(page)
 
             date_selector = page.locator(".DatesMobileV2_movieDateText__AA4n3", has_text=showdate)
             if await date_selector.count() == 0:
@@ -101,20 +93,12 @@ async def check_available_shows(movie_url, showdate, seat_row, movie_name):
                     continue
 
                 raw_text = (await show_el.inner_text()).strip()
-                show_time_text = raw_text.splitlines()[0].strip()  # Take only the time (first line)
+                show_time_text = raw_text.splitlines()[0].strip()
                 try:
-                    # Fix datetime parsing
                     show_time_obj = datetime.strptime(show_time_text, "%I:%M %p").time()
                     current_year = now.year
-                    # If showdate only contains day number like "28"
-                    try:
-                        show_day = datetime.strptime(f"{showdate} {now.strftime('%b')} {current_year}",
-                                                     "%d %b %Y").date()
-                    except:
-                        print(f"❌ Invalid showdate format: {showdate}")
-                        continue
+                    show_day = datetime.strptime(f"{showdate} {now.strftime('%b')} {current_year}", "%d %b %Y").date()
                     show_datetime = datetime.combine(show_day, show_time_obj)
-
                     if show_datetime >= now + timedelta(hours=1):
                         valid_shows.append((show_el, show_time_text))
                 except Exception as e:
@@ -129,7 +113,6 @@ async def check_available_shows(movie_url, showdate, seat_row, movie_name):
 
             for show_el, show_time_text in valid_shows:
                 print(f"🎫 Checking show at {show_time_text}...")
-
                 await show_el.click()
 
                 try:
@@ -153,8 +136,18 @@ async def check_available_shows(movie_url, showdate, seat_row, movie_name):
                         row = row_part.split(",")[0].strip().upper()
                         price = aria_label.lower().split("price ")[1].strip()
                         label_el = await seat.query_selector("label")
-                        seat_number = await label_el.inner_text() if label_el else "?"
-                        row_map[row].append((seat_number, price))
+                        seat_number_text = await label_el.inner_text() if label_el else "?"
+
+                        try:
+                            seat_number = int(seat_number_text)
+                        except:
+                            seat_number = None
+
+                        if seat_range and seat_number:
+                            if not (seat_range[0] <= seat_number <= seat_range[1]):
+                                continue  # 🚫 Skip seat outside configured range
+
+                        row_map[row].append((seat_number_text, price))
 
                 if row_map:
                     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -168,15 +161,13 @@ async def check_available_shows(movie_url, showdate, seat_row, movie_name):
                     await send_telegram_message(final_message)
                     log_to_file(final_message, movie_name)
                 else:
-                    msg = f"😴 No seats in rows {seat_row} for {movie_name} at {show_time_text} on {showdate}."
+                    msg = f"😴 No seats in rows {seat_row} (range {seat_range}) for {movie_name} at {show_time_text} on {showdate}."
                     print(msg)
                     await send_telegram_message(msg)
 
                 await page.go_back()
                 await page.wait_for_selector("#imaxd", timeout=10000)
                 await click_imax_tab(page)
-
-                # Wait until dates are back on screen
                 await page.wait_for_selector(".DatesMobileV2_movieDateText__AA4n3", timeout=10000)
                 await page.locator(".DatesMobileV2_movieDateText__AA4n3", has_text=showdate).click()
 
@@ -194,6 +185,7 @@ async def run_all():
                 cfg["movie_url"],
                 cfg["showdate"],
                 cfg["rows"],
+                cfg.get("seat_range"),
                 cfg["movie_name"]
             )
         print("⏳ Waiting 3 minutes...\n")
