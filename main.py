@@ -55,6 +55,7 @@ async def click_imax_tab(page):
                 if await clickable.is_visible():
                     await clickable.scroll_into_view_if_needed()
                     await clickable.click(force=True)
+                    print("✅ IMAX tab clicked.")
                     return
                 else:
                     print(f"⏳ IMAX clickable not visible (attempt {attempt + 1})")
