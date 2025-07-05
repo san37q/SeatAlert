@@ -7,8 +7,13 @@ from datetime import datetime, timedelta
 import json
 
 # 📥 Load config
-with open("config.json") as f:
-    CONFIGS = json.load(f)
+import os
+
+config_json = os.getenv("CONFIG_JSON")
+if not config_json:
+    raise ValueError("❌ CONFIG_JSON environment variable is missing!")
+
+CONFIGS = json.loads(config_json)
 
 TELEGRAM_BOT_TOKEN = "7616332352:AAEXYsoQk7mOe2okiNxrwJUaC0l1guQB6qM"
 TELEGRAM_USER_ID = 834245089
